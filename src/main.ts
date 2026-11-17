@@ -1,75 +1,98 @@
-import { NestFactory } from "@nestjs/core";
-import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
-import { NestExpressApplication } from "@nestjs/platform-express";
-import { AppModule } from "@/src/app.module";
-import * as dotenv from "dotenv";
-import { Request, Response, NextFunction } from "express";
-import cookieParser from "cookie-parser";
-import helmet from "helmet";
-import { join } from "path";
-
-dotenv.config();
+import { NestFactory, Reflector } from '@nestjs/core';
+import { ValidationPipe, Logger } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { AppModule } from './app.module';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { RolesGuard } from './common/guards/roles.guard';
+import { configuration } from './config/configuration';
 
 async function bootstrap() {
+  const logger = new Logger('HelpDeskBootstrap');
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const config = configuration();
 
-  app.useStaticAssets(join(process.cwd(), "uploads"), {
-    prefix: "/uploads/",
-  });
+  // Trust proxy in production / docker environments
+  app.set('trust proxy', true);
 
-  const expressApp = app.getHttpAdapter().getInstance();
-  expressApp.set("trust proxy", true);
+  // Global API Prefix
+  app.setGlobalPrefix('api/v1');
 
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          // Swagger UI needs 'unsafe-inline' to function correctly
-          scriptSrc: ["'self'", "'unsafe-inline'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", "data:", "validator.swagger.io"], // Allow Swagger images
-          connectSrc: ["'self'"],
-        },
+  // Global Pipes
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+      transformOptions: {
+        enableImplicitConversion: true,
       },
-      // This policy can block Swagger assets, so we disable it for now
-      crossOriginEmbedderPolicy: false,
     }),
   );
 
-  // 1. Logger
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const now = new Date().toISOString().replace("T", " ").replace(/\..+/, "");
-    console.log(`[HTTP] [${now}] ${req.method} ${req.originalUrl}`);
-    next();
-  });
+  // Global Filters
+  app.useGlobalFilters(new HttpExceptionFilter());
 
-  // 2. Swagger Configuration
-  const config = new DocumentBuilder()
-    .setTitle("KDex API")
-    .setVersion("1.0")
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup("api", app, document);
+  // Global Interceptors
+  app.useGlobalInterceptors(new TransformInterceptor());
 
-  // 3. Cookie Parser
-  const cookieSecret =
-    process.env.COOKIE_SECRET || "fallback-secret-dont-use-in-prod";
-  app.use(cookieParser(cookieSecret));
+  // Global Guards
+  const reflector = app.get(Reflector);
+  app.useGlobalGuards(new JwtAuthGuard(reflector), new RolesGuard(reflector));
 
-  // 4. CORS Configuration
-  const allowedOrigins = process.env.CORS_ORIGINS
-    ? process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim())
-    : [];
-
+  // CORS Configuration
   app.enableCors({
-    origin: allowedOrigins,
+    origin: '*',
     credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-    maxAge: 86400,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
-  await app.listen(parseInt(process.env.PORT as string));
+  // Swagger OpenAPI Documentation
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('HelpDesk API')
+    .setDescription(
+      'Full-Stack Support Ticket Management System with Role-Based Access Control (RBAC).\n\n' +
+      'Developed by:\n' +
+      '- MD TANVIR RAHMAN (Authentication & User Management)\n' +
+      '- MD ARAFAT RAHMAN (Ticket Management & Workflow)\n' +
+      '- TANBIR RAFAT NABIL (Ticket Comments & Collaboration)',
+    )
+    .setVersion('1.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'Authorization',
+        description: 'Enter JWT Bearer token',
+        in: 'header',
+      },
+      'JWT-auth',
+    )
+    .addTag('Authentication', 'User authentication, registration, login, logout, and profile')
+    .addTag('Users', 'User management, staff creation, role and status updates (Admin only)')
+    .addTag('Tickets', 'Complaint ticket lifecycle, status/priority management, search & filters')
+    .addTag('Ticket Comments', 'Threaded comments and communication between clients and support staff')
+    .addTag('Ticket Activities', 'Immutable audit logs and system event history')
+    .build();
+
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+  });
+
+  const port = config.port;
+  await app.listen(port);
+  logger.log(`=======================================================`);
+  logger.log(` HelpDesk API is running on: http://localhost:${port}/api/v1`);
+  logger.log(` Swagger documentation at:   http://localhost:${port}/api/docs`);
+  logger.log(` Environment:                ${config.nodeEnv}`);
+  logger.log(`=======================================================`);
 }
+
 bootstrap();
