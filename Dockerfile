@@ -1,21 +1,35 @@
-FROM node:20 AS base
+# Multi-stage Dockerfile for HelpDesk NestJS Backend
+FROM node:22-alpine AS builder
 
-RUN npm install -g pnpm pm2
-WORKDIR /var/www/backend
-COPY package.json .
-COPY pnpm-lock.yaml .
-RUN pnpm install --frozen-lockfile --prod
+WORKDIR /usr/src/app
 
-FROM base AS builder
-WORKDIR /var/www/backend
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+COPY package.json pnpm-lock.yaml ./
+COPY pnpm-workspace.yaml ./
+
 RUN pnpm install --frozen-lockfile
+
 COPY . .
-RUN pnpm build
 
-FROM base AS production
-WORKDIR /var/www/backend
-COPY --from=builder /var/www/backend/dist /var/www/backend/dist
-# COPY --from=builder /var/www/backend/.env /var/www/backend/.env
+RUN pnpm run build
 
-CMD ["node" , "dist/main.js"]
-# CMD ["pm2-runtime","-i","max","dist/main.js"]
+# Production runtime stage
+FROM node:22-alpine AS runner
+
+WORKDIR /usr/src/app
+
+ENV NODE_ENV=production
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+COPY package.json pnpm-lock.yaml ./
+COPY pnpm-workspace.yaml ./
+
+RUN pnpm install --prod --frozen-lockfile
+
+COPY --from=builder /usr/src/app/dist ./dist
+
+EXPOSE 3000
+
+CMD ["node", "dist/main"]

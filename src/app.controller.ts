@@ -1,19 +1,20 @@
-import { AppService } from "@/src/app.service";
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Public } from './common/decorators/public.decorator';
 
+@ApiTags('System')
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) {}
-
-  @Get()
-  getHello(): string {
-    return this.appService.getHello();
-  }
-
+  @Public()
   @Get('health')
-  healthCheck() {
-    // The middleware in main.ts will automatically 
-    // attach the CSRF cookies to this response.
-    return { status: 'ok', timestamp: new Date().toISOString() };
+  @ApiOperation({ summary: 'System health check' })
+  @ApiResponse({ status: 200, description: 'Application is healthy and running' })
+  getHealth() {
+    return {
+      status: 'healthy',
+      service: 'HelpDesk Backend API',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+    };
   }
 }

@@ -1,30 +1,74 @@
 services:
-  krown-dex-backend-service:
-    build: .
-    image: ${CONTAINER_NAME:-krown-dex-backend}-img:${GIT_COMMIT_HASH:-latest}
-    container_name: ${CONTAINER_NAME:-krown-dex-backend}
-    restart: always
-    tty: true
-
-    ports:
-      - "${RTC_PORT_MIN:-10000}-${RTC_PORT_MAX:-10100}:${RTC_PORT_MIN:-10000}-${RTC_PORT_MAX:-10100}"
-      - "${RTC_PORT_MIN:-10000}-${RTC_PORT_MAX:-10100}:${RTC_PORT_MIN:-10000}-${RTC_PORT_MAX:-10100}/udp"
-
-    networks:
-      - app-network
-
-    env_file: .env
+  postgres:
+    image: postgres:16-alpine
+    container_name: helpdesk-postgres
+    restart: unless-stopped
     environment:
-      APP_VERSION: "${GIT_COMMIT_HASH:-latest}"
-
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_DATABASE:-helpdesk_db}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:${PORT:-5001}"]
-      interval: 5s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d ${DB_DATABASE:-helpdesk_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - helpdesk-net
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: helpdesk-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@helpdesk.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-Admin@12345}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - helpdesk-net
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: helpdesk-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      APP_PORT: 3000
+      APP_URL: http://localhost:3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_DATABASE: ${DB_DATABASE:-helpdesk_db}
+      JWT_SECRET: ${JWT_SECRET:-helpdesk_super_secret_jwt_key_2026}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+      BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-12}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - helpdesk-net
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
 
 networks:
-  app-network:
+  helpdesk-net:
     driver: bridge
-    external: true
