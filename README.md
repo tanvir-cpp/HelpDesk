@@ -5,7 +5,6 @@
 [![TypeORM](https://img.shields.io/badge/TypeORM-v0.3-orange.svg)](https://typeorm.io/)
 [![pnpm](https://img.shields.io/badge/pnpm-v12-yellow.svg)](https://pnpm.io/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-v5.7-blue.svg)](https://www.typescriptlang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 An enterprise-ready, modular academic group project implementing a complete Support Ticket Management System with strict Role-Based Access Control (RBAC), database migrations, JWT authentication, and automated audit trails.
 
@@ -18,7 +17,7 @@ An enterprise-ready, modular academic group project implementing a complete Supp
 | **MD TANVIR RAHMAN** | Member 1 (Lead) | `tanvir-user-management` | Authentication, User Management, JWT, RBAC |
 | **MD ARAFAT RAHMAN** | Member 2 | `arafat-ticket-management` | Complaint / Ticket Management & Workflows |
 | **TANBIR RAFAT NABIL** | Member 3 | `tanbir-ticket-comments` | Ticket Comments & Threaded Communication |
-| **ALL MEMBERS** | Group Integration | `main` | Full Integration, Audit Trail, Docs, E2E Tests |
+| **ALL MEMBERS** | Group Integration | `main` | Full integration of all modules (merged from the three branches above) |
 
 ---
 
@@ -46,13 +45,13 @@ An enterprise-ready, modular academic group project implementing a complete Supp
   - Chronological conversation display.
 
 - **System Audit Trail (`ticket_activities`):**
-  - Immutable audit logs tracking ticket creation, status changes, priority shifts, resolution notes, and closures.
+  - Audit log entries (written by `TicketsService`) tracking ticket creation, status changes, priority shifts, resolution notes, and closures.
 
 - **Developer Experience & Infrastructure:**
   - Interactive Swagger OpenAPI documentation at `/api/docs`.
   - Strict database migrations using TypeORM CLI (`synchronize: false`).
   - Containerization with Docker & Docker Compose (PostgreSQL 16, pgAdmin 4, NestJS app).
-  - 58 automated unit and end-to-end integration tests.
+  - 24 automated unit tests (Jest) across the auth, users, tickets and ticket-comments services.
 
 ---
 
@@ -73,6 +72,25 @@ An enterprise-ready, modular academic group project implementing a complete Supp
 
 ---
 
+## 🔌 API Overview
+
+All routes are prefixed with `/api/v1` and require a JWT (`Authorization: Bearer <token>`) unless marked public.
+
+| Module | Endpoints | Access |
+|---|---|---|
+| Auth | `POST /auth/register`, `POST /auth/login` | Public |
+| Auth | `POST /auth/logout`, `GET /auth/me` | Authenticated |
+| Users | `POST /users`, `GET /users`, `GET /users/:id`, `PATCH /users/:id`, `DELETE /users/:id` | Mixed, see Swagger (create/list/deactivate are `ADMIN`) |
+| Tickets | `POST /tickets`, `GET /tickets`, `GET /tickets/my-tickets`, `GET /tickets/:id` | Authenticated |
+| Tickets | `PATCH /tickets/:id`, `PATCH /tickets/:id/status`, `PATCH /tickets/:id/resolve`, `PATCH /tickets/:id/close`, `PATCH /tickets/:id/reopen`, `DELETE /tickets/:id` | Role-restricted, see Swagger (several are `STAFF`/`ADMIN`) |
+| Comments | `POST /tickets/:ticketId/comments`, `GET /tickets/:ticketId/comments` | Authenticated (clients only on their own tickets) |
+| Comments | `GET /ticket-comments/:id`, `PATCH /ticket-comments/:id`, `DELETE /ticket-comments/:id` | Author or `ADMIN` for edit/delete |
+| System | `GET /health` | Public |
+
+Full, always-current request/response schemas are in Swagger at `http://localhost:3000/api/docs`.
+
+---
+
 ## 🏛️ System Architecture
 
 ```mermaid
@@ -85,16 +103,14 @@ graph TD
         Guards --> UserMod[UsersModule]
         Guards --> TicketMod[TicketsModule]
         Guards --> CommentMod[TicketCommentsModule]
-        Guards --> ActMod[TicketActivitiesModule]
-
-        TicketMod -.->|Logs Events| ActMod
+        TicketMod -.->|Writes audit entries| ActEnt[TicketActivity entity]
     end
 
     subgraph "TypeORM Persistence Layer"
         UserMod --> DB[(PostgreSQL Database)]
         TicketMod --> DB
         CommentMod --> DB
-        ActMod --> DB
+        ActEnt --> DB
     end
 ```
 
@@ -167,77 +183,30 @@ erDiagram
 helpdesk/
 ├── src/
 │   ├── modules/
-│   │   ├── auth/                      # Authentication & JWT strategies
-│   │   │   ├── dto/
-│   │   │   ├── strategies/
-│   │   │   ├── auth.controller.ts
-│   │   │   ├── auth.service.ts
-│   │   │   └── auth.module.ts
-│   │   │
-│   │   ├── users/                     # User management & Staff administration
-│   │   │   ├── dto/
-│   │   │   ├── entities/
-│   │   │   ├── users.controller.ts
-│   │   │   ├── users.service.ts
-│   │   │   └── users.module.ts
-│   │   │
-│   │   ├── tickets/                   # Complaint tickets & status workflows
-│   │   │   ├── dto/
-│   │   │   ├── entities/
-│   │   │   ├── tickets.controller.ts
-│   │   │   ├── tickets.service.ts
-│   │   │   └── tickets.module.ts
-│   │   │
-│   │   ├── ticket-comments/           # Threaded communication & comments
-│   │   │   ├── dto/
-│   │   │   ├── entities/
-│   │   │   ├── ticket-comments.controller.ts
-│   │   │   ├── ticket-comments.service.ts
-│   │   │   └── ticket-comments.module.ts
-│   │   │
-│   │   └── ticket-activities/         # Immutable audit trail
-│   │       ├── entities/
-│   │       ├── ticket-activities.controller.ts
-│   │       ├── ticket-activities.service.ts
-│   │       └── ticket-activities.module.ts
+│   │   ├── auth/                  # Registration, login, JWT strategy
+│   │   ├── users/                 # User management & staff administration
+│   │   ├── tickets/               # Tickets, status workflow, audit logging
+│   │   ├── ticket-comments/       # Threaded comments on tickets
+│   │   └── ticket-activities/     # TicketActivity entity (audit trail)
 │   │
-│   ├── common/                        # Shared decorators, guards, filters, enums
-│   │   ├── decorators/
+│   ├── common/                    # Shared decorators, enums, filters,
+│   │   ├── decorators/            #   guards, interceptors, interfaces
 │   │   ├── enums/
 │   │   ├── filters/
 │   │   ├── guards/
 │   │   ├── interceptors/
 │   │   └── interfaces/
 │   │
-│   ├── config/                        # Environment configuration service
-│   │   └── configuration.ts
-│   │
-│   ├── database/                      # Migrations, seed scripts, DataSource
-│   │   ├── migrations/
-│   │   ├── seeds/
-│   │   └── data-source.ts
-│   │
-│   ├── app.controller.ts
+│   ├── config/configuration.ts    # Environment configuration
+│   ├── database/                  # data-source.ts, migrations/, seeds/
+│   ├── app.controller.ts          # GET /health
 │   ├── app.module.ts
-│   └── main.ts
+│   └── main.ts                    # Bootstrap, /api/v1 prefix, Swagger
 │
-├── test/                             # Supertest E2E integration test suite
-│   ├── app.e2e-spec.ts
-│   └── jest-e2e.json
-│
-├── docs/                             # Full architectural & demonstration documents
-│   ├── architecture.md
-│   ├── database-design.md
-│   ├── api-documentation.md
-│   ├── git-workflow.md
-│   ├── tanvir-demonstration.md
-│   ├── arafat-demonstration.md
-│   ├── tanbir-demonstration.md
-│   └── integration-guide.md
+├── docs/
+│   └── tanbir-demonstration.md    # Ticket comments demo guide
 │
 ├── .env.example
-├── .env.development
-├── .env.test
 ├── .env.production.example
 ├── docker-compose.yml
 ├── Dockerfile
@@ -257,7 +226,7 @@ pnpm install
 ```
 
 ### 2. Configure Environment
-Copy `.env.example` to `.env.development`:
+Copy `.env.example` to `.env.development` (env files are git-ignored, so each developer creates their own):
 ```bash
 cp .env.example .env.development
 ```
@@ -274,7 +243,7 @@ DB_USERNAME=postgres
 DB_PASSWORD=your_password
 DB_DATABASE=helpdesk_db
 
-JWT_SECRET=super_secret_jwt_key_helpdesk_2026_dev
+JWT_SECRET=replace_with_a_secure_secret_min_32_chars_long
 JWT_EXPIRES_IN=1d
 BCRYPT_SALT_ROUNDS=12
 
@@ -304,15 +273,14 @@ pnpm run start:dev
 ## 🧪 Testing
 
 ```bash
-# Run unit tests across all 5 modules (28 tests)
+# Run the unit tests (24 tests across 4 service specs)
 pnpm test
-
-# Run full end-to-end integration test suite (30 tests)
-pnpm run test:e2e
 
 # Run test coverage
 pnpm run test:cov
 ```
+
+> The `test:e2e` script is defined in `package.json`, but there is no `test/` folder yet, so end-to-end tests are not available.
 
 ---
 
@@ -338,13 +306,7 @@ docker compose up -d --build
 
 ---
 
-## 📑 Detailed Documentation Links
+## 📑 Documentation
 
-- [System Architecture & Sequence Flows](docs/architecture.md)
-- [Database Design & Schema Constraints](docs/database-design.md)
-- [REST API Endpoint Reference](docs/api-documentation.md)
-- [Git Branch & Workflow Strategy](docs/git-workflow.md)
-- [Member 1 (Tanvir) Demonstration Guide](docs/tanvir-demonstration.md)
-- [Member 2 (Arafat) Demonstration Guide](docs/arafat-demonstration.md)
-- [Member 3 (Tanbir) Demonstration Guide](docs/tanbir-demonstration.md)
-- [Integration & Deployment Guide](docs/integration-guide.md)
+- Interactive API reference: Swagger at `/api/docs` when the server is running.
+- [Ticket Comments Demonstration Guide](docs/tanbir-demonstration.md)
