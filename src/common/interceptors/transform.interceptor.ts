@@ -35,10 +35,12 @@ export class TransformInterceptor<T>
           'message' in response &&
           'data' in response
         ) {
+          const { message, data, ...rest } = response;
           return {
             success: true,
-            message: response.message,
-            data: response.data,
+            message,
+            data,
+            ...rest,
           };
         }
 
