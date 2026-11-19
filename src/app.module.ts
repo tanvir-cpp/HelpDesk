@@ -10,6 +10,7 @@ import { TicketActivity } from './modules/ticket-activities/entities/ticket-acti
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
+import { TicketCommentsModule } from './modules/ticket-comments/ticket-comments.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { TicketsModule } from './modules/tickets/tickets.module';
     UsersModule,
     AuthModule,
     TicketsModule,
+    TicketCommentsModule,
   ],
   controllers: [AppController],
   providers: [],
